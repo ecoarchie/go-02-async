@@ -130,6 +130,7 @@ func TestSigner(t *testing.T) {
 	ExecutePipeline(hashSignJobs...) //nolint:typecheck
 
 	end := time.Since(start)
+	fmt.Printf("end = %v\n", end)
 
 	expectedTime := 3 * time.Second
 

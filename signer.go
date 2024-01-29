@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 func Crc32ToChan(data string, out chan<- string) {
 		out <- DataSignerCrc32(data)
-		close(out)
 }
 
 func Crc32FromMd5(s string, out chan<- string, mu *sync.Mutex) {
@@ -36,19 +34,16 @@ func SingleHash(in, out chan interface{}) {
 			crsmd := <-crsmd5chan
 			crs32 := <-crs32chan
 			res := crs32 + "~" + crsmd
-			fmt.Printf("single Hash for %s - %v\n", s, res)
 			out <- res
 			wg.Done()
 		}()
 	}
 	wg.Wait()
-	close(out)
 }
 
 func Crc32Th(inData interface{}, ch chan<- string, i int) {
 	s := strconv.Itoa(i)
 	ch <- DataSignerCrc32(s + inData.(string))
-	close(ch)
 }
 
 func MultiHash(in, out chan interface{}) {
@@ -71,6 +66,7 @@ func MultiHash(in, out chan interface{}) {
 			var step string
 			for _, ch := range chans {
 				step += <-ch
+				close(ch)
 			}
 
 			out <- step
@@ -79,7 +75,6 @@ func MultiHash(in, out chan interface{}) {
 		}(inData)
 	}
 	wg.Wait()
-	close(out)
 }
 
 // CombineResults получает все результаты, сортирует (https://golang.org/pkg/sort/),
@@ -93,18 +88,21 @@ func CombineResults(in, out chan interface{}) {
 
 	o := strings.Join(res, "_")
 	out <- o
-	close(out)
 }
 
 func ExecutePipeline(jobs ...job) {
+	wg := &sync.WaitGroup{}
 	in := make(chan interface{})
-	for i := 0; i < len(jobs); i++ {
+	for _, j := range jobs {
+		wg.Add(1)
 		out := make(chan interface{})
-		if i != len(jobs)-1 {
-			go jobs[i](in, out)
-		} else {
-			jobs[i](in, out)
-		}
+		go func(job func(in, out chan interface{}), wait *sync.WaitGroup, in, out chan interface{}) {
+			defer wait.Done()
+
+			job(in, out)
+			close(out)
+		}(j, wg, in, out)
 		in = out
 	}
+	wg.Wait()
 }
